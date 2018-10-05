@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 import os
 
-version = '2.0.0'
+version = '2.0.1.dp'
 
 requires = [
     'redis',
@@ -47,7 +47,7 @@ setup(name='openprocurement.bot.identification',
       author='Quintagroup, Ltd.',
       author_email='info@quintagroup.com',
       license='Apache License 2.0',
-      url='https://github.com/openprocurement/openprocurement.bot.identification',
+      url='https://github.com/ProzorroUKR/openprocurement.bot.identification',
       packages=find_packages(exclude=['ez_setup']),
       namespace_packages=['openprocurement', 'openprocurement.bot'],
       include_package_data=True,
