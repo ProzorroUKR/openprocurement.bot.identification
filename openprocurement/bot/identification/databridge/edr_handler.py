@@ -65,6 +65,8 @@ class EdrHandler(BaseWorker):
     def try_peek_and_get_edr_data(self):
         try:
             tender_data = self.edrpou_codes_queue.peek()
+            logger.debug('DEBUG. Peeked from edrpou_codes_queue {}. Current edrpou_codes_queue size={}'.format(
+                tender_data, self.edrpou_codes_queue.qsize()))
         except LoopExit:
             gevent.sleep()
         else:
@@ -86,9 +88,14 @@ class EdrHandler(BaseWorker):
         else:
             self.handle_status_response(response, tender_data.tender_id)
             self.retry_edrpou_codes_queue.put(tender_data)
+            logger.debug('DEBUG. Put {} to retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                tender_data, self.retry_edrpou_codes_queue.qsize()))
             logger.info('Put {} to retry_edrpou_codes_queue'.format(tender_data),
                         extra=journal_context(params=tender_data.log_params()))
+        logger.debug('DEBUG. Extract from edrpou_codes_queue {}. Current edrpou_codes_queue size={}'.format(
+            self.edrpou_codes_queue.peek(), self.edrpou_codes_queue.qsize()))
         self.edrpou_codes_queue.get()
+
 
     def move_data_nonexistent_edr(self, res_json, tender_data, is_retry):
         logger.info('Empty response for {} doc_id {}.'.format(tender_data, tender_data.doc_id()),
@@ -100,8 +107,12 @@ class EdrHandler(BaseWorker):
         data.file_content = file_content
         self.process_tracker.set_item(tender_data.tender_id, tender_data.item_id, 1)
         self.process_tracker.add_unprocessed_item(tender_data)
+        logger.debug('DEBUG. Put {} to upload_to_doc_service_queue. Current upload_to_doc_service_queue size={}'.format(
+            data, self.upload_to_doc_service_queue.qsize()))
         self.upload_to_doc_service_queue.put(data)
         if is_retry:
+            logger.debug('DEBUG. Extract {} retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
             self.retry_edrpou_codes_queue.get()
 
     def move_data_existing_edr(self, response, tender_data, is_retry):
@@ -111,11 +122,25 @@ class EdrHandler(BaseWorker):
         except (KeyError, IndexError) as e:
             logger.info('Error {}. {}'.format(tender_data, e))
             self.retry_edrpou_codes_queue.put(self.retry_edrpou_codes_queue.get() if is_retry else tender_data)
+            if is_retry:
+                logger.debug('DEBUG. Extract {} from retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                    self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
+                logger.debug('DEBUG. Put {} to retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                    self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
+                self.retry_edrpou_codes_queue.put(self.retry_edrpou_codes_queue.get())
+            else:
+                logger.debug('DEBUG. Put {} to retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                    tender_data, self.retry_edrpou_codes_queue.qsize()))
+                self.retry_edrpou_codes_queue.put(tender_data)
         else:
             for data in data_list:
                 self.upload_to_doc_service_queue.put(data)
                 logger.info('Put tender {} doc_id {} to upload_to_doc_service_queue.'.format(data, data.doc_id()))
+                logger.debug('DEBUG. Put {} to upload_to_doc_service_queue. Current upload_to_doc_service_queue size={}'.format(
+                    data, self.upload_to_doc_service_queue.qsize()))
             if is_retry:
+                logger.debug('DEBUG. Extract {} from retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                    self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
                 self.retry_edrpou_codes_queue.get()
             self.process_tracker.set_item(tender_data.tender_id, tender_data.item_id, len(response.json()['data']))
 
@@ -130,6 +155,8 @@ class EdrHandler(BaseWorker):
     def try_get_retry_data_and_process(self):
         try:
             tender_data = self.retry_edrpou_codes_queue.peek()
+            logger.debug('DEBUG. {} peeked from retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                tender_data, self.retry_edrpou_codes_queue.qsize()))
         except LoopExit:
             gevent.sleep()
         else:
@@ -154,11 +181,22 @@ class EdrHandler(BaseWorker):
             else:
                 logger.info('Put {} in back of retry_edrpou_codes_queue. Response {}'.format(tender_data, res_json),
                             extra=journal_context(params=tender_data.log_params()))
+                logger.debug(
+                    'DEBUG. Extract {} from retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                        self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
+                logger.debug(
+                    'DEBUG. Put {} to retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                        self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
                 self.retry_edrpou_codes_queue.put(self.retry_edrpou_codes_queue.get())
                 gevent.sleep()
         except Exception as e:
             logger.info('Put {} in back of retry_edrpou_codes_queue. Error: {}'.format(tender_data, e.message),
                         extra=journal_context(params=tender_data.log_params()))
+            logger.debug(
+                'DEBUG. Extract {} from retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                    self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
+            logger.debug('DEBUG. Put {} to retry_edrpou_codes_queue. Current retry_edrpou_codes_queue size={}'.format(
+                self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
             self.retry_edrpou_codes_queue.put(self.retry_edrpou_codes_queue.get())
             gevent.sleep()
         else:
