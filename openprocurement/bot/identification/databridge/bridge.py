@@ -279,6 +279,7 @@ class EdrDataBridge(object):
             gevent.killall(self.jobs, timeout=5)
         except Exception as e:
             logger.error(e)
+            logger.debug('DEBUG. EDR API Data Bridge Start crashed. ')
 
     def check_and_revive_jobs(self):
         for name, job in self.jobs.items():
