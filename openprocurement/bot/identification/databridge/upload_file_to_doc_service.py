@@ -25,7 +25,7 @@ class UploadFileToDocService(BaseWorker):
     """ Upload file with details """
 
     def __init__(self, upload_to_doc_service_queue, upload_to_tender_queue, process_tracker, doc_service_client,
-                 services_not_available, sleep_change_value, delay=15):
+                 services_not_available, sleep_change_value, delay=15, current_status=None):
         super(UploadFileToDocService, self).__init__(services_not_available)
         self.start_time = datetime.now()
 
@@ -40,6 +40,8 @@ class UploadFileToDocService(BaseWorker):
         self.sleep_change_value = sleep_change_value
         # retry queues for workers
         self.retry_upload_to_doc_service_queue = Queue(maxsize=500)
+
+        self.current_status = current_status
 
     def upload_worker(self):
         while not self.exit:

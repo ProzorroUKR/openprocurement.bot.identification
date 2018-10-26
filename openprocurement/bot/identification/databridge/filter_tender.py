@@ -28,7 +28,7 @@ class FilterTenders(BaseWorker):
     """ Edr API Data Bridge """
 
     def __init__(self, tenders_sync_client, filtered_tender_ids_queue, edrpou_codes_queue, process_tracker,
-                 services_not_available, sleep_change_value, delay=15):
+                 services_not_available, sleep_change_value, delay=15, current_status=None):
         super(FilterTenders, self).__init__(services_not_available)
         self.start_time = datetime.now()
 
@@ -41,6 +41,8 @@ class FilterTenders(BaseWorker):
         self.filtered_tender_ids_queue = filtered_tender_ids_queue
         self.edrpou_codes_queue = edrpou_codes_queue
         self.sleep_change_value = sleep_change_value
+
+        self.current_status = current_status
 
     def prepare_data(self):
         """Get tender_id from filtered_tender_ids_queue, check award/qualification status, documentType; get

@@ -31,7 +31,7 @@ class EdrHandler(BaseWorker):
     activityKind_scheme = u'КВЕД'
 
     def __init__(self, proxy_client, edrpou_codes_queue, upload_to_doc_service_queue, process_tracker,
-                 services_not_available, delay=15):
+                 services_not_available, delay=15, current_status=None):
         super(EdrHandler, self).__init__(services_not_available)
         self.start_time = datetime.now()
 
@@ -53,6 +53,8 @@ class EdrHandler(BaseWorker):
 
         self.delay = delay
         self.process_tracker = process_tracker
+
+        self.current_status = current_status
 
     def get_edr_data(self):
         """Get data from edrpou_codes_queue; make request to EDR Api, passing EDRPOU (IPN, passport); Received data put

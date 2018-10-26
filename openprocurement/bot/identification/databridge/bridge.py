@@ -106,7 +106,8 @@ class EdrDataBridge(object):
                                services_not_available=self.services_not_available,
                                process_tracker=self.process_tracker,
                                sleep_change_value=self.sleep_change_value,
-                               delay=self.delay)
+                               delay=self.delay,
+                               current_status=self.current_status)
 
         self.filter_tender = partial(FilterTenders.spawn,
                                      tenders_sync_client=self.tenders_sync_client,
@@ -115,7 +116,8 @@ class EdrDataBridge(object):
                                      process_tracker=self.process_tracker,
                                      services_not_available=self.services_not_available,
                                      sleep_change_value=self.sleep_change_value,
-                                     delay=self.delay)
+                                     delay=self.delay,
+                                     current_status=self.current_status)
 
         self.edr_handler = partial(EdrHandler.spawn,
                                    proxy_client=self.proxy_client,
@@ -123,7 +125,8 @@ class EdrDataBridge(object):
                                    upload_to_doc_service_queue=self.upload_to_doc_service_queue,
                                    process_tracker=self.process_tracker,
                                    services_not_available=self.services_not_available,
-                                   delay=self.delay)
+                                   delay=self.delay,
+                                   current_status=self.current_status)
 
         self.upload_file_to_doc_service = partial(UploadFileToDocService.spawn,
                                                   upload_to_doc_service_queue=self.upload_to_doc_service_queue,
@@ -132,7 +135,8 @@ class EdrDataBridge(object):
                                                   doc_service_client=self.doc_service_client,
                                                   services_not_available=self.services_not_available,
                                                   sleep_change_value=self.sleep_change_value,
-                                                  delay=self.delay)
+                                                  delay=self.delay,
+                                                  current_status=self.current_status)
 
         self.upload_file_to_tender = partial(UploadFileToTender.spawn,
                                              client=self.client,
@@ -140,7 +144,31 @@ class EdrDataBridge(object):
                                              process_tracker=self.process_tracker,
                                              services_not_available=self.services_not_available,
                                              sleep_change_value=self.sleep_change_value,
-                                             delay=self.delay)
+                                             delay=self.delay,
+                                             current_status=self.current_status)
+        self._counter = 0
+
+    def current_status(self):
+        if self._counter == 20:
+            self._counter = 0
+            logger.info(
+                'Current state: Filtered tenders {}; Edrpou codes queue {}; Retry edrpou codes queue {};'
+                'Upload to doc service {}; Retry upload to doc service {}; '
+                'Upload to tender {}; Retry upload to tender {}'.format(
+                    self.filtered_tender_ids_queue.qsize(),
+                    self.edrpou_codes_queue.qsize(),
+                    self.jobs['edr_handler'].retry_edrpou_codes_queue.qsize() if self.jobs[
+                        'edr_handler'] else 0,
+                    self.upload_to_doc_service_queue.qsize(),
+                    self.jobs['upload_file_to_doc_service'].retry_upload_to_doc_service_queue.qsize() if
+                    self.jobs[
+                        'upload_file_to_doc_service'] else 0,
+                    self.upload_to_tender_queue.qsize(),
+                    self.jobs['upload_file_to_tender'].retry_upload_to_tender_queue.qsize() if self.jobs[
+                        'upload_file_to_tender'] else 0
+                ))
+        self._counter += 1
+
 
     def config_get(self, name):
         return self.config.get('main').get(name)

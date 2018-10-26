@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 class UploadFileToTender(BaseWorker):
     def __init__(self, client, upload_to_tender_queue, process_tracker, services_not_available, sleep_change_value,
-                 delay=15):
+                 delay=15, current_status=None):
         super(UploadFileToTender, self).__init__(services_not_available)
         self.start_time = datetime.now()
 
@@ -41,6 +41,8 @@ class UploadFileToTender(BaseWorker):
 
         # blockers
         self.sleep_change_value = sleep_change_value
+
+        self.current_status = current_status
 
     def upload_worker(self):
         while not self.exit:

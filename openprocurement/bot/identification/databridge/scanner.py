@@ -22,7 +22,7 @@ class Scanner(BaseWorker):
     """ Edr API Data Bridge """
 
     def __init__(self, tenders_sync_client, filtered_tender_ids_queue, services_not_available, process_tracker,
-                 sleep_change_value, delay=15):
+                 sleep_change_value, delay=15, current_status=None):
         super(Scanner, self).__init__(services_not_available)
         self.start_time = datetime.now()
         self.delay = delay
@@ -37,6 +37,8 @@ class Scanner(BaseWorker):
         # blockers
         self.initialization_event = Event()
         self.sleep_change_value = sleep_change_value
+
+        self.current_status = current_status
 
     @retry(stop_max_attempt_number=5, wait_exponential_multiplier=retry_mult)
     def initialize_sync(self, params=None, direction=None):
