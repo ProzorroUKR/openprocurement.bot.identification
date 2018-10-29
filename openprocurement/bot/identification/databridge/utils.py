@@ -143,10 +143,10 @@ def valid_prequal_tender(tender):
 def method_logger(method):
     def wrapper(*args, **kwargs):
         try:
-            logger.debug('DEBUG.METHOD im {}'.format(method.__name__))
+            LOGGER.debug('DEBUG.METHOD im {}'.format(method.__name__))
             return method(*args, **kwargs)
         except Exception as e:
-            logger.debug('DEBUG.METHOD im {}. Error is {}'.format(method.__name__, e))
+            LOGGER.debug('DEBUG.METHOD im {}. Error is {}'.format(method.__name__, e))
             raise e
     return wrapper
 
