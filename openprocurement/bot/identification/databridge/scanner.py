@@ -11,7 +11,7 @@ from openprocurement.bot.identification.databridge.constants import retry_mult
 from openprocurement.bot.identification.databridge.journal_msg_ids import DATABRIDGE_INFO, DATABRIDGE_SYNC_SLEEP, \
     DATABRIDGE_TENDER_PROCESS, DATABRIDGE_WORKER_DIED
 from openprocurement.bot.identification.databridge.utils import journal_context, generate_req_id, \
-    more_tenders, valid_qualification_tender, valid_prequal_tender
+    more_tenders, valid_qualification_tender, valid_prequal_tender, method_logger
 from restkit import ResourceError
 from retrying import retry
 
@@ -61,6 +61,7 @@ class Scanner(BaseWorker):
             return self.tenders_sync_client.sync_tenders(params,
                                                          extra_headers={'X-Client-Request-ID': generate_req_id()})
 
+    @method_logger
     def get_tenders(self, params={}, direction=""):
         response = self.initialize_sync(params=params, direction=direction)
 
@@ -89,10 +90,12 @@ class Scanner(BaseWorker):
                 else:
                     raise re
 
+    @method_logger
     def should_process_tender(self, tender):
         return (not self.process_tracker.check_processed_tenders(tender['id']) and
                 (valid_qualification_tender(tender) or valid_prequal_tender(tender)))
 
+    @method_logger
     def get_tenders_forward(self):
         self.services_not_available.wait()
         logger.info('Start forward data sync worker...')
@@ -105,6 +108,7 @@ class Scanner(BaseWorker):
         else:
             logger.warning('Forward data sync finished!')
 
+    @method_logger
     def get_tenders_backward(self):
         self.services_not_available.wait()
         logger.info('Start backward data sync worker...')
@@ -119,17 +123,23 @@ class Scanner(BaseWorker):
             logger.info('Backward data sync finished.')
             return True
 
+    @method_logger
     def put_tenders_to_process(self, params, direction):
         for tender in self.get_tenders(params=params, direction=direction):
             logger.info('Backward sync: Put tender {} to process...'.format(tender['id']),
                         extra=journal_context({"MESSAGE_ID": DATABRIDGE_TENDER_PROCESS},
                                               {"TENDER_ID": tender['id']}))
+            logger.debug('DEBUG. Put {} to filtered_tender_ids_queue. Current filtered_tender_ids_queue size={}'.format(
+                tender['id'], self.filtered_tender_ids_queue.qsize()))
+            self.current_status()
             self.filtered_tender_ids_queue.put(tender['id'])
 
+    @method_logger
     def _start_jobs(self):
         return {'get_tenders_backward': spawn(self.get_tenders_backward),
                 'get_tenders_forward': spawn(self.get_tenders_forward)}
 
+    @method_logger
     def check_and_revive_jobs(self):
         for name, job in self.immortal_jobs.items():
             if job.dead and not job.value:

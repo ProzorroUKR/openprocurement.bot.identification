@@ -18,7 +18,7 @@ from openprocurement.bot.identification.databridge.journal_msg_ids import (
     DATABRIDGE_GET_TENDER_FROM_QUEUE, DATABRIDGE_EMPTY_RESPONSE
 )
 from openprocurement.bot.identification.databridge.utils import (
-    journal_context, RetryException, get_res_json, is_no_document_in_edr, fill_data_list, is_payment_required
+    journal_context, RetryException, get_res_json, is_no_document_in_edr, fill_data_list, is_payment_required, method_logger
 )
 from openprocurement.bot.identification.databridge.constants import version, retry_mult
 
@@ -56,15 +56,19 @@ class EdrHandler(BaseWorker):
 
         self.current_status = current_status
 
+    @method_logger
     def get_edr_data(self):
         """Get data from edrpou_codes_queue; make request to EDR Api, passing EDRPOU (IPN, passport); Received data put
         into upload_to_doc_service_queue"""
+        self.current_status()
         while not self.exit:
             self.services_not_available.wait()
             self.try_peek_and_get_edr_data()
             gevent.sleep()
 
+    @method_logger
     def try_peek_and_get_edr_data(self):
+        logger.debug('DEBUG.METHOD')
         try:
             tender_data = self.edrpou_codes_queue.peek()
             logger.debug('DEBUG. Peeked from edrpou_codes_queue {}. Current edrpou_codes_queue size={}'.format(
@@ -74,6 +78,7 @@ class EdrHandler(BaseWorker):
         else:
             self.get_data_and_move_to_upload_or_retry(tender_data)
 
+    @method_logger
     def get_data_and_move_to_upload_or_retry(self, tender_data):
         logger.info('Get {} from edrpou_codes_queue'.format(tender_data),
                     extra=journal_context({"MESSAGE_ID": DATABRIDGE_GET_TENDER_FROM_QUEUE},
@@ -98,7 +103,7 @@ class EdrHandler(BaseWorker):
             self.edrpou_codes_queue.peek(), self.edrpou_codes_queue.qsize()))
         self.edrpou_codes_queue.get()
 
-
+    @method_logger
     def move_data_nonexistent_edr(self, res_json, tender_data, is_retry):
         logger.info('Empty response for {} doc_id {}.'.format(tender_data, tender_data.doc_id()),
                     extra=journal_context({"MESSAGE_ID": DATABRIDGE_EMPTY_RESPONSE}, tender_data.log_params()))
@@ -117,6 +122,7 @@ class EdrHandler(BaseWorker):
                 self.retry_edrpou_codes_queue.peek(), self.retry_edrpou_codes_queue.qsize()))
             self.retry_edrpou_codes_queue.get()
 
+    @method_logger
     def move_data_existing_edr(self, response, tender_data, is_retry):
         data_list = []
         try:
@@ -146,6 +152,7 @@ class EdrHandler(BaseWorker):
                 self.retry_edrpou_codes_queue.get()
             self.process_tracker.set_item(tender_data.tender_id, tender_data.item_id, len(response.json()['data']))
 
+    @method_logger
     def retry_get_edr_data(self):
         """Get data from retry_edrpou_codes_queue; Put data into upload_to_doc_service_queue if request is successful,
         otherwise put data back to retry_edrpou_codes_queue."""
@@ -154,6 +161,7 @@ class EdrHandler(BaseWorker):
             self.try_get_retry_data_and_process()
             gevent.sleep()
 
+    @method_logger
     def try_get_retry_data_and_process(self):
         try:
             tender_data = self.retry_edrpou_codes_queue.peek()
@@ -164,6 +172,7 @@ class EdrHandler(BaseWorker):
         else:
             self.retry_process_tender_data(tender_data)
 
+    @method_logger
     def retry_process_tender_data(self, tender_data):
         logger.info('Get {} from retry_edrpou_codes_queue'.format(tender_data),
                     extra=journal_context({"MESSAGE_ID": DATABRIDGE_GET_TENDER_FROM_QUEUE},
@@ -171,6 +180,7 @@ class EdrHandler(BaseWorker):
         self.retry_try_get_edr_data(tender_data)
         self.until_too_many_requests_event.wait()
 
+    @method_logger
     def retry_try_get_edr_data(self, tender_data):
         try:
             response = self.get_edr_data_request(tender_data.param(), tender_data.code, tender_data.doc_id())
@@ -210,6 +220,7 @@ class EdrHandler(BaseWorker):
             elif response.status_code == 200:
                 self.move_data_existing_edr(response, tender_data, True)
 
+    @method_logger
     @retry(stop_max_attempt_number=5, wait_exponential_multiplier=retry_mult)
     def get_edr_data_request(self, param, code, document_id):
         """Execute request to EDR Api for retry queue objects."""
@@ -221,6 +232,7 @@ class EdrHandler(BaseWorker):
             raise RetryException('Unsuccessful retry request to EDR.', response)
         return response
 
+    @method_logger
     def handle_status_response(self, response, tender_id):
         """Process unsuccessful request"""
         if response.status_code == 429:
@@ -235,6 +247,7 @@ class EdrHandler(BaseWorker):
             logger.warning('Error appeared while requesting to EDR. Description: {err}'.format(err=response.text),
                            extra=journal_context(params={"TENDER_ID": tender_id}))
 
+    @method_logger
     def wait_until_too_many_requests(self, seconds_to_wait):
         if self.until_too_many_requests_event.ready():
             logger.info('Bot is waiting...')
@@ -243,6 +256,7 @@ class EdrHandler(BaseWorker):
             logger.info('Bot stop waiting...')
             self.until_too_many_requests_event.set()
 
+    @method_logger
     def _start_jobs(self):
         return {'get_edr_data': spawn(self.get_edr_data),
                 'retry_get_edr_data': spawn(self.retry_get_edr_data)}

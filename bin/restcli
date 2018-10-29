@@ -1,0 +1,29 @@
+#!/home/sasha/work/edr_logging/openprocurement.bot.identification/.env/bin/python
+# -*- coding: utf-8 -*-
+#
+# This file is part of restkit released under the MIT license. 
+# See the NOTICE for more information.
+
+
+
+import sys
+sys.path[0:0] = [
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/src/openprocurement_client',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/.env/lib/python2.7/site-packages',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/bottle-0.12.13-py2.7.egg',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/retrying-1.3.3-py2.7.egg',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/restkit-4.2.2-py2.7.egg',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/munch-2.3.2-py2.7.egg',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/iso8601-0.1.11-py2.7.egg',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/gevent-1.1.1-py2.7-linux-x86_64.egg',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/requests-2.11.0-py2.7.egg',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/socketpool-0.5.3-py2.7.egg',
+  '/home/sasha/work/edr_logging/openprocurement.bot.identification/eggs/http_parser-0.8.3-py2.7-linux-x86_64.egg',
+  ]
+
+
+from restkit.contrib.console import main
+
+if __name__ == '__main__':
+    main()

@@ -26,7 +26,7 @@ from openprocurement.bot.identification.databridge.filter_tender import FilterTe
 from openprocurement.bot.identification.databridge.edr_handler import EdrHandler
 from openprocurement.bot.identification.databridge.upload_file_to_tender import UploadFileToTender
 from openprocurement.bot.identification.databridge.upload_file_to_doc_service import UploadFileToDocService
-from openprocurement.bot.identification.databridge.utils import journal_context, check_412
+from openprocurement.bot.identification.databridge.utils import journal_context, check_412, method_logger
 from openprocurement.bot.identification.databridge.process_tracker import ProcessTracker
 from caching import Db
 from openprocurement.bot.identification.databridge.journal_msg_ids import (
@@ -151,10 +151,10 @@ class EdrDataBridge(object):
     def current_status(self):
         if self._counter == 20:
             self._counter = 0
-            logger.info(
-                'Current state: Filtered tenders {}; Edrpou codes queue {}; Retry edrpou codes queue {};'
+            logger.debug(
+                'DEBUG.Current state: Filtered tenders {}; Edrpou codes queue {}; Retry edrpou codes queue {};'
                 'Upload to doc service {}; Retry upload to doc service {}; '
-                'Upload to tender {}; Retry upload to tender {}'.format(
+                'Upload to tender {}; Retry upload to tender {}.'.format(
                     self.filtered_tender_ids_queue.qsize(),
                     self.edrpou_codes_queue.qsize(),
                     self.jobs['edr_handler'].retry_edrpou_codes_queue.qsize() if self.jobs[
@@ -281,11 +281,12 @@ class EdrDataBridge(object):
             logger.error(e)
             logger.debug('DEBUG. EDR API Data Bridge Start crashed. ')
 
+    @method_logger
     def check_and_revive_jobs(self):
         for name, job in self.jobs.items():
             if job.dead:
                 self.revive_job(name)
-
+    @method_logger
     def revive_job(self, name):
         logger.warning('Restarting {} worker'.format(name),
                        extra=journal_context({"MESSAGE_ID": DATABRIDGE_RESTART_WORKER}))

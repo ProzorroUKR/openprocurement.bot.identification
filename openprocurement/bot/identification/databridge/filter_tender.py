@@ -14,7 +14,7 @@ from simplejson import loads
 
 from openprocurement.bot.identification.databridge.utils import (
     generate_req_id, journal_context, generate_doc_id, is_code_invalid, item_id, journal_item_name,
-    check_related_lot_status, journal_item_params)
+    check_related_lot_status, journal_item_params, method_logger)
 from openprocurement.bot.identification.databridge.data import Data
 from openprocurement.bot.identification.databridge.journal_msg_ids import (
     DATABRIDGE_GET_TENDER_FROM_QUEUE, DATABRIDGE_TENDER_PROCESS, DATABRIDGE_TENDER_NOT_PROCESS
@@ -43,7 +43,7 @@ class FilterTenders(BaseWorker):
         self.sleep_change_value = sleep_change_value
 
         self.current_status = current_status
-
+    @method_logger
     def prepare_data(self):
         """Get tender_id from filtered_tender_ids_queue, check award/qualification status, documentType; get
         identifier's id and put into edrpou_codes_queue."""
@@ -51,12 +51,16 @@ class FilterTenders(BaseWorker):
             self.services_not_available.wait()
             try:
                 tender_id = self.filtered_tender_ids_queue.peek()
+                logger.debug(
+                    'DEBUG. {} peeked from filtered_tender_ids_queue. Current filtered_tender_ids_queue size={}'.format(
+                        self.filtered_tender_ids_queue.peek(), self.filtered_tender_ids_queue.qsize()))
             except LoopExit:
                 gevent.sleep()
             else:
                 self.temp_process(tender_id)
             gevent.sleep(self.sleep_change_value.time_between_requests)
 
+    @method_logger
     def temp_process(self, tender_id):
         try:
             response = self.tenders_sync_client.request("GET", path='{}/{}'.format(self.tenders_sync_client.prefix_path,
@@ -74,6 +78,7 @@ class FilterTenders(BaseWorker):
         else:
             self.process_items_and_move(response, tender_id)
 
+    @method_logger
     def process_items_and_move(self, response, tender_id):
         self.sleep_change_value.decrement()
         if response.status_int == 200:
@@ -85,12 +90,17 @@ class FilterTenders(BaseWorker):
             self.process_items(response, tender, "award")
         elif 'qualifications' in tender:
             self.process_items(response, tender, "qualification")
+        logger.debug(
+            'DEBUG. Extract {} from filtered_tender_ids_queue, Current filtered_tender_ids_queue size={}'.format(
+                self.filtered_tender_ids_queue.peek(), self.filtered_tender_ids_queue.qsize()))
         self.filtered_tender_ids_queue.get()
 
+    @method_logger
     def process_items(self, response, tender, item_name):
         for item in tender[item_name + "s"]:
             self.process_item(response, tender, tender['id'], item, item_name)
 
+    @method_logger
     def process_item(self, response, tender, tender_id, item, item_name):
         logger.info('Processing tender {} bid {} {} {}'.format(tender['id'], item_id(item), item_name, item['id']),
                     extra=journal_context({"MESSAGE_ID": DATABRIDGE_TENDER_PROCESS}, journal_item_params(tender, item)))
@@ -106,20 +116,27 @@ class FilterTenders(BaseWorker):
                         extra=journal_context(params={"TENDER_ID": tender['id'], "BID_ID": item_id(item),
                                                       journal_item_name(item): item['id']}))
 
+    @method_logger
     def should_process_item(self, item):
         return item['status'] == 'pending' and self.has_not_documents(item)
 
+    @method_logger
     def has_not_documents(self, item):
         return not ([document for document in item.get('documents', []) if document.get('documentType') == DOC_TYPE])
 
+    @method_logger
     def temp_important_part_for_item(self, response, tender, item, item_name, code):
         self.process_tracker.set_item(tender['id'], item['id'])
         document_id = generate_doc_id()
         tender_data = Data(tender['id'], item['id'], str(code), item_name + "s",
                            {'meta': {'id': document_id, 'author': author,
                                      'sourceRequests': [response.headers['X-Request-ID']]}})
+        logger.debug(
+            'DEBUG. Put {} to edrpou_codes_queue. Current edrpou_codes_queue size={}'.format(
+                tender_data, self.edrpou_codes_queue.qsize()))
         self.edrpou_codes_queue.put(tender_data)
 
+    @method_logger
     def process_award_supplier(self, response, tender, award, supplier):
         code = supplier['identifier']['id']
         if is_code_invalid(code):
@@ -133,13 +150,18 @@ class FilterTenders(BaseWorker):
                 extra=journal_context({"MESSAGE_ID": DATABRIDGE_TENDER_NOT_PROCESS},
                                       journal_item_params(tender, award)))
 
+    @method_logger
     def remove_invalid_item(self, tender, item, item_name, code):
+        logger.debug(
+            'DEBUG. Extract {} from filtered_tender_ids_queue, Current filtered_tender_ids_queue size={}'.format(
+                self.filtered_tender_ids_queue.peek(), self.filtered_tender_ids_queue.qsize()))
         self.filtered_tender_ids_queue.get()
         logger.info(u'Tender {} bid {} {} {} identifier id {} is not valid.'.format(
             tender['id'], item_name, item_id(item), item['id'], code),
             extra=journal_context({"MESSAGE_ID": DATABRIDGE_TENDER_NOT_PROCESS},
                                   params=journal_item_params(tender, item)))
 
+    @method_logger
     def process_qualification(self, response, tender, qualification):
         appropriate_bid = [b for b in tender['bids'] if b['id'] == qualification['bidID']][0]
         code = appropriate_bid['tenderers'][0]['identifier']['id']
@@ -154,16 +176,19 @@ class FilterTenders(BaseWorker):
                         extra=journal_context({"MESSAGE_ID": DATABRIDGE_TENDER_NOT_PROCESS},
                                               params=journal_item_params(tender, qualification)))
 
+    @method_logger
     def should_process_award(self, supplier, tender, award):
         return (supplier['identifier']['scheme'] == identification_scheme and
                 check_related_lot_status(tender, award)
                 and not self.process_tracker.check_processing_item(tender['id'], award['id'])
                 and not self.process_tracker.check_processed_item(tender['id'], award['id']))
 
+    @method_logger
     def should_process_qualification(self, bid, tender, qualification):
         return (bid['tenderers'][0]['identifier']['scheme'] == identification_scheme
                 and not self.process_tracker.check_processing_item(tender['id'], qualification['id'])
                 and not self.process_tracker.check_processed_item(tender['id'], qualification['id']))
 
+    @method_logger
     def _start_jobs(self):
         return {'prepare_data': spawn(self.prepare_data)}

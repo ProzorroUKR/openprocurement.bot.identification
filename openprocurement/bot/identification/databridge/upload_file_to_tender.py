@@ -15,7 +15,7 @@ from gevent.hub import LoopExit
 from restkit import ResourceError
 
 from openprocurement.bot.identification.databridge.base_worker import BaseWorker
-from openprocurement.bot.identification.databridge.utils import journal_context
+from openprocurement.bot.identification.databridge.utils import journal_context, method_logger
 from openprocurement.bot.identification.databridge.journal_msg_ids import DATABRIDGE_SUCCESS_UPLOAD_TO_TENDER, \
     DATABRIDGE_UNSUCCESS_UPLOAD_TO_TENDER, DATABRIDGE_ITEM_STATUS_CHANGED_WHILE_PROCESSING
 from openprocurement.bot.identification.databridge.constants import retry_mult
@@ -44,19 +44,23 @@ class UploadFileToTender(BaseWorker):
 
         self.current_status = current_status
 
+    @method_logger
     def upload_worker(self):
         while not self.exit:
             self.services_not_available.wait()
             self.try_peek_data_and_upload_to_tender(False)
             gevent.sleep(self.sleep_change_value.time_between_requests)
 
+    @method_logger
     def retry_upload_worker(self):
         while not self.exit:
             self.services_not_available.wait()
             self.try_peek_data_and_upload_to_tender(True)
             gevent.sleep(self.sleep_change_value.time_between_requests)
 
+    @method_logger
     def try_peek_data_and_upload_to_tender(self, is_retry):
+        self.current_status()
         try:
             tender_data = self.peek_from_tender_queue(is_retry)
         except LoopExit:
@@ -64,9 +68,22 @@ class UploadFileToTender(BaseWorker):
         else:
             self.try_upload_to_tender(tender_data, is_retry)
 
+    @method_logger
     def peek_from_tender_queue(self, is_retry):
-        return self.retry_upload_to_tender_queue.peek() if is_retry else self.upload_to_tender_queue.peek()
+        if is_retry:
+            logger.debug(
+                'DEBUG. {} peeked from retry_upload_to_tender_queue. Current retry_upload_to_tender_queue size={}'.format(
+                    self.retry_upload_to_tender_queue.peek(), self.retry_upload_to_tender_queue.qsize()))
+            return self.retry_upload_to_tender_queue.peek()
+        else:
+            logger.debug(
+                'DEBUG. {} peeked from upload_to_tender_queue. Current upload_to_tender_queue size={}'.format(
+                    self.upload_to_tender_queue.peek(), self.upload_to_tender_queue.qsize()))
+            return self.upload_to_tender_queue.peek()
 
+        #return self.retry_upload_to_tender_queue.peek() if is_retry else self.upload_to_tender_queue.peek()
+
+    @method_logger
     def try_upload_to_tender(self, tender_data, is_retry):
         try:
             self.update_headers_and_upload_to_tender(tender_data, is_retry)
@@ -77,12 +94,14 @@ class UploadFileToTender(BaseWorker):
         else:
             self.successfully_uploaded_to_tender(tender_data, is_retry)
 
+    @method_logger
     def update_headers_and_upload_to_tender(self, tender_data, is_retry):
         if is_retry:
             self.do_upload_to_tender_with_retry(tender_data)
         else:
             self.do_upload_to_tender(tender_data)
 
+    @method_logger
     def do_upload_to_tender(self, tender_data):
         document_data = tender_data.file_content.get('data', {})
         document_data["documentType"] = "registerExtract"
@@ -91,11 +110,13 @@ class UploadFileToTender(BaseWorker):
                                                  {'data': document_data},
                                                  '{}/{}/documents'.format(tender_data.item_name, tender_data.item_id))
 
+    @method_logger
     @retry(stop_max_attempt_number=5, wait_exponential_multiplier=retry_mult)
     def do_upload_to_tender_with_retry(self, tender_data):
         """Process upload to tender request for retry queue objects."""
         self.do_upload_to_tender(tender_data)
 
+    @method_logger
     def remove_data_or_increase_wait(self, re, tender_data, is_retry):
         if re.status_int == 403 or re.status_int == 422 or re.status_int is None:
             self.removing_data(re, tender_data, is_retry)
@@ -104,6 +125,7 @@ class UploadFileToTender(BaseWorker):
         else:
             self.handle_error(re, tender_data, is_retry)
 
+    @method_logger
     def removing_data(self, re, tender_data, is_retry):
         logger.warning("Accept {} while uploading to {} doc_id: {}. Message {}".format(
             re.status_int, tender_data, tender_data.doc_id(), re.msg),
@@ -111,6 +133,7 @@ class UploadFileToTender(BaseWorker):
                                   tender_data.log_params()))
         self.remove_data(tender_data, is_retry)
 
+    @method_logger
     def decrease_request_frequency(self, re, tender_data):
         logger.info("Accept 429 while uploading to {} doc_id: {}. Message {}".format(
             tender_data, tender_data.doc_id(), re.msg),
@@ -118,29 +141,46 @@ class UploadFileToTender(BaseWorker):
                                   tender_data.log_params()))
         self.sleep_change_value.increment()
 
+    @method_logger
     def handle_error(self, re, tender_data, is_retry):
         logger.info('Error while uploading file to {} doc_id: {}. Status: {}. Message: {}'.format(
             tender_data, tender_data.doc_id(), getattr(re, "status_int", None), re.message),
             extra=journal_context({"MESSAGE_ID": DATABRIDGE_UNSUCCESS_UPLOAD_TO_TENDER}, tender_data.log_params()))
         self.sleep_change_value.decrement()
         if not is_retry:
+            logger.debug(
+                'DEBUG. Put {} to retry_upload_to_tender_queue. Current retry_upload_to_tender_queue size={}'.format(
+                    tender_data, self.retry_upload_to_tender_queue.qsize()))
             self.retry_upload_to_tender_queue.put(tender_data)
+            logger.debug(
+                'DEBUG. Extract {} from upload_to_tender_queue, Current upload_to_tender_queue size={}'.format(
+                    self.upload_to_tender_queue.peek(), self.upload_to_tender_queue.qsize()))
             self.upload_to_tender_queue.get()
 
+    @method_logger
     def successfully_uploaded_to_tender(self, tender_data, is_retry):
+        self.current_status()
         logger.info('Successfully uploaded file to {} doc_id: {}'.format(tender_data, tender_data.doc_id()),
                     extra=journal_context({"MESSAGE_ID": DATABRIDGE_SUCCESS_UPLOAD_TO_TENDER},
                                           tender_data.log_params()))
         self.remove_data(tender_data, is_retry)
 
+    @method_logger
     def remove_data(self, tender_data, is_retry):
         self.process_tracker.update_items_and_tender(tender_data.tender_id, tender_data.item_id, tender_data.doc_id())
         self.sleep_change_value.decrement()
         if is_retry:
+            logger.debug(
+                'DEBUG. Extract {} from retry_upload_to_tender_queue, Current retry_upload_to_tender_queue size={}'.format(
+                    self.retry_upload_to_tender_queue.peek(), self.retry_upload_to_tender_queue.qsize()))
             self.retry_upload_to_tender_queue.get()
         else:
+            logger.debug(
+                'DEBUG. Extract {} from upload_to_tender_queue, Current upload_to_tender_queue size={}'.format(
+                    self.upload_to_tender_queue.peek(), self.upload_to_tender_queue.qsize()))
             self.upload_to_tender_queue.get()
 
+    @method_logger
     def _start_jobs(self):
         return {'upload_worker': spawn(self.upload_worker),
                 'retry_upload_worker': spawn(self.retry_upload_worker)}
