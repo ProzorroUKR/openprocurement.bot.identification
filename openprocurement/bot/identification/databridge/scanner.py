@@ -92,6 +92,11 @@ class Scanner(BaseWorker):
 
     @method_logger
     def should_process_tender(self, tender):
+        cached = self.process_tracker.check_processed_tenders(tender['id'])
+        if cached:
+            logger.debug('DEBUG. Tender {} {} cached'.format(
+                tender['id'], 'is' if cached else 'is not'
+            ))
         return (not self.process_tracker.check_processed_tenders(tender['id']) and
                 (valid_qualification_tender(tender) or valid_prequal_tender(tender)))
 
