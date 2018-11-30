@@ -17,8 +17,9 @@ from restkit import ResourceError
 from openprocurement.bot.identification.databridge.base_worker import BaseWorker
 from openprocurement.bot.identification.databridge.utils import journal_context
 from openprocurement.bot.identification.databridge.journal_msg_ids import DATABRIDGE_SUCCESS_UPLOAD_TO_TENDER, \
-    DATABRIDGE_UNSUCCESS_UPLOAD_TO_TENDER, DATABRIDGE_ITEM_STATUS_CHANGED_WHILE_PROCESSING
-from openprocurement.bot.identification.databridge.constants import retry_mult
+    DATABRIDGE_UNSUCCESS_UPLOAD_TO_TENDER, DATABRIDGE_ITEM_STATUS_CHANGED_WHILE_PROCESSING, \
+    DATABRIDGE_DOCUMENT_IS_ALREADY_ATTACHED
+from openprocurement.bot.identification.databridge.constants import retry_mult, DOC_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +67,17 @@ class UploadFileToTender(BaseWorker):
         return self.retry_upload_to_tender_queue.peek() if is_retry else self.upload_to_tender_queue.peek()
 
     def try_upload_to_tender(self, tender_data, is_retry):
-        try:
-            self.update_headers_and_upload_to_tender(tender_data, is_retry)
-        except ResourceError as re:
-            self.remove_data_or_increase_wait(re, tender_data, is_retry)
-        except Exception as e:
-            self.handle_error(e, tender_data, is_retry)
+        if self.check_tender_before_upload(tender_data):
+            try:
+                self.update_headers_and_upload_to_tender(tender_data, is_retry)
+            except ResourceError as re:
+                self.remove_data_or_increase_wait(re, tender_data, is_retry)
+            except Exception as e:
+                self.handle_error(e, tender_data, is_retry)
+            else:
+                self.successfully_uploaded_to_tender(tender_data, is_retry)
         else:
-            self.successfully_uploaded_to_tender(tender_data, is_retry)
+            self.remove_data(tender_data, is_retry)
 
     def update_headers_and_upload_to_tender(self, tender_data, is_retry):
         if is_retry:
@@ -138,6 +142,27 @@ class UploadFileToTender(BaseWorker):
             self.retry_upload_to_tender_queue.get()
         else:
             self.upload_to_tender_queue.get()
+
+    def check_document_is_already_attached(self, tender_data):
+        resources = self.client._get_tender_resource_item(
+            munchify({'data': {'id': tender_data.tender_id}}),
+            tender_data.item_id,
+            tender_data.item_name
+        )
+        docs = resources['data'].get('documents') or []
+        return any(doc['documentType'] == DOC_TYPE for doc in docs)
+
+    def check_tender_before_upload(self, tender_data):
+        if self.check_document_is_already_attached(tender_data):
+            logger.info(
+                '{} is already has document with documentType registerExtract.'.format(
+                    tender_data, extra=journal_context(params={
+                        "TENDER_ID": tender_data.tender_id,
+                        "{}_ID".format(tender_data.item_name[:-1].upper()): tender_data.item_id,
+                        "MESSAGE_ID": DATABRIDGE_DOCUMENT_IS_ALREADY_ATTACHED}), ))
+            return False
+
+        return True
 
     def _start_jobs(self):
         return {'upload_worker': spawn(self.upload_worker),

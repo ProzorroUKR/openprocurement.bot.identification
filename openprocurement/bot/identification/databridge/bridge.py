@@ -49,6 +49,10 @@ class TendersClient(BaseTendersClient):
     def _create_tender_resource_item(self, *args, **kwargs):
         return super(TendersClient, self)._create_tender_resource_item(*args, **kwargs)
 
+    @check_412
+    def _get_tender_resource_item(self, *args, **kwargs):
+        return super(TendersClient, self)._get_tender_resource_item(*args, **kwargs)
+
 
 class EdrDataBridge(object):
     """ Edr API Data Bridge """
