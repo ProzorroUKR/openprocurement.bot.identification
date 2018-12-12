@@ -1,5 +1,8 @@
 # coding=utf-8
+import sys
 from gevent import monkey
+
+import traceback
 
 monkey.patch_all()
 
@@ -17,7 +20,8 @@ from restkit import ResourceError
 from openprocurement.bot.identification.databridge.base_worker import BaseWorker
 from openprocurement.bot.identification.databridge.utils import journal_context
 from openprocurement.bot.identification.databridge.journal_msg_ids import DATABRIDGE_SUCCESS_UPLOAD_TO_TENDER, \
-    DATABRIDGE_UNSUCCESS_UPLOAD_TO_TENDER, DATABRIDGE_ITEM_STATUS_CHANGED_WHILE_PROCESSING
+    DATABRIDGE_UNSUCCESS_UPLOAD_TO_TENDER, DATABRIDGE_ITEM_STATUS_CHANGED_WHILE_PROCESSING, \
+    DATABRIDGE_UPLOAD_FILE_TO_TENDER_WORKER_DIED
 from openprocurement.bot.identification.databridge.constants import retry_mult
 
 logger = logging.getLogger(__name__)
@@ -43,10 +47,17 @@ class UploadFileToTender(BaseWorker):
         self.sleep_change_value = sleep_change_value
 
     def upload_worker(self):
-        while not self.exit:
-            self.services_not_available.wait()
-            self.try_peek_data_and_upload_to_tender(False)
-            gevent.sleep(self.sleep_change_value.time_between_requests)
+        try:
+            while not self.exit:
+                self.services_not_available.wait()
+                self.try_peek_data_and_upload_to_tender(False)
+                gevent.sleep(self.sleep_change_value.time_between_requests)
+        except:
+            logger.error('Cause exception while uploading file to tender. {}'.format(
+                ''.join(traceback.format_exception(sys.exc_type, sys.exc_value, sys.exc_traceback))),
+                extra=journal_context({"MESSAGE_ID": DATABRIDGE_UPLOAD_FILE_TO_TENDER_WORKER_DIED})
+            )
+            raise  # Re-raise exception
 
     def retry_upload_worker(self):
         while not self.exit:
